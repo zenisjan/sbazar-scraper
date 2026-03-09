@@ -124,48 +124,37 @@ class SbazarScraper:
 
                 url = location
 
-            # Step 2: Set consent cookie to bypass future CMP redirects.
-            # szncmpone=1 tells Seznam.cz CMP that consent was given.
+            # Step 2: Set consent cookies to bypass CMP redirects.
+            # Both szncmpone and euconsent-v2 are required — the homepage works
+            # with just szncmpone, but category/detail pages check euconsent-v2
+            # via bcr.iva.seznam.cz (reason=missing if absent).
             self.client.cookies.set("szncmpone", "1", domain=".seznam.cz")
-            # Also set on .sbazar.cz in case it's checked per-domain
             self.client.cookies.set("szncmpone", "1", domain=".sbazar.cz")
-            Actor.log.info("Set szncmpone consent cookie")
+            # IAB TCF v2.0 consent string — accept-all for Seznam.cz services
+            self.client.cookies.set(
+                "euconsent-v2",
+                "CPz_qQAPz_qQAGXABBENDeCgAAAAAAAAACiQAAAAAAAA",
+                domain=".seznam.cz",
+            )
+            self.client.cookies.set(
+                "euconsent-v2",
+                "CPz_qQAPz_qQAGXABBENDeCgAAAAAAAAACiQAAAAAAAA",
+                domain=".sbazar.cz",
+            )
+            Actor.log.info("Set consent cookies (szncmpone + euconsent-v2)")
 
             # Log all accumulated cookies for debugging
             cookie_names = [f"{c.name}={c.domain}" for c in self.client.cookies.jar]
             Actor.log.info(f"Cookies after warmup: {cookie_names}")
 
-            # Step 3: Verify session works — request homepage with accumulated cookies
+            # Step 3: Verify session works — request a category page
             response = await self.client.get(
-                f"{BASE_URL}/", follow_redirects=True
+                f"{BASE_URL}/27-sport", follow_redirects=True
             )
             Actor.log.info(
                 f"Post-consent check: status={response.status_code} "
                 f"url={response.url} size={len(response.content)}"
             )
-
-            # If we still end up on CMP, the consent cookie alone isn't enough.
-            # Try also setting euconsent-v2 (TCF v2 accept-all consent string).
-            final_url = str(response.url)
-            if "cmp.seznam.cz" in final_url or len(response.content) < 30000:
-                Actor.log.warning(
-                    "Consent cookie alone insufficient, setting euconsent-v2"
-                )
-                # Standard IAB TCF v2.0 "accept all" consent string
-                # This is a minimal valid TCF consent string indicating full consent
-                self.client.cookies.set(
-                    "euconsent-v2",
-                    "CPz_qQAPz_qQAGXABBENDeCgAAAAAAAAACiQAAAAAAAA",
-                    domain=".seznam.cz",
-                )
-                # Retry
-                response = await self.client.get(
-                    f"{BASE_URL}/", follow_redirects=True
-                )
-                Actor.log.info(
-                    f"Post-euconsent check: status={response.status_code} "
-                    f"url={response.url} size={len(response.content)}"
-                )
 
             self._session_warmed = True
 
@@ -174,6 +163,16 @@ class SbazarScraper:
             # Set consent cookies anyway and continue
             self.client.cookies.set("szncmpone", "1", domain=".seznam.cz")
             self.client.cookies.set("szncmpone", "1", domain=".sbazar.cz")
+            self.client.cookies.set(
+                "euconsent-v2",
+                "CPz_qQAPz_qQAGXABBENDeCgAAAAAAAAACiQAAAAAAAA",
+                domain=".seznam.cz",
+            )
+            self.client.cookies.set(
+                "euconsent-v2",
+                "CPz_qQAPz_qQAGXABBENDeCgAAAAAAAAACiQAAAAAAAA",
+                domain=".sbazar.cz",
+            )
             self._session_warmed = True
 
     async def scrape_category_listings(
