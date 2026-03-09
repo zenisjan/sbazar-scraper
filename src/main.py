@@ -76,26 +76,104 @@ class SbazarScraper:
     async def _warm_session(self):
         """Warm up the HTTP session by following the Seznam autologin redirect chain.
 
-        Sbazar.cz redirects first-time visitors through login.szn.cz/autologin
-        which sets session cookies. After this, subsequent requests work normally.
-        The httpx client's cookie jar retains the cookies automatically.
+        Sbazar.cz redirects first-time visitors through a chain:
+        sbazar → login.szn.cz/autologin → sbazar?noredirect=1 → bcr.iva.seznam.cz → cmp.seznam.cz
+
+        We follow redirects manually to accumulate autologin cookies, then set
+        the Seznam consent cookie (szncmpone) to bypass the CMP consent page.
+        After this, subsequent requests return real content.
         """
         if self._session_warmed:
             return
 
-        Actor.log.info("Warming up session (following autologin redirect chain)...")
+        Actor.log.info("Warming up session (manual redirect chain + consent cookie)...")
         try:
+            # Step 1: Manually follow the redirect chain to accumulate cookies
+            # from login.szn.cz/autologin. Stop before reaching cmp.seznam.cz.
+            url = f"{BASE_URL}/"
+            for hop in range(15):
+                response = await self.client.get(url, follow_redirects=False)
+                Actor.log.info(
+                    f"  Warmup hop {hop}: {response.status_code} "
+                    f"url={response.url} size={len(response.content)}"
+                )
+
+                # If we got a 200 with substantial content, session is ready
+                if response.status_code == 200 and len(response.content) > 30000:
+                    Actor.log.info("Session warmed up (got content page directly)")
+                    self._session_warmed = True
+                    return
+
+                if response.status_code not in (301, 302, 303, 307, 308):
+                    break
+
+                location = response.headers.get("location", "")
+                if not location:
+                    break
+
+                # Resolve relative URLs
+                if location.startswith("/"):
+                    from urllib.parse import urlparse
+                    parsed = urlparse(str(response.url))
+                    location = f"{parsed.scheme}://{parsed.netloc}{location}"
+
+                # Stop before CMP consent page — we have autologin cookies by now
+                if "cmp.seznam.cz" in location or "bcr.iva.seznam.cz" in location:
+                    Actor.log.info(f"  Reached consent redirect, stopping chain")
+                    break
+
+                url = location
+
+            # Step 2: Set consent cookie to bypass future CMP redirects.
+            # szncmpone=1 tells Seznam.cz CMP that consent was given.
+            self.client.cookies.set("szncmpone", "1", domain=".seznam.cz")
+            # Also set on .sbazar.cz in case it's checked per-domain
+            self.client.cookies.set("szncmpone", "1", domain=".sbazar.cz")
+            Actor.log.info("Set szncmpone consent cookie")
+
+            # Log all accumulated cookies for debugging
+            cookie_names = [f"{c.name}={c.domain}" for c in self.client.cookies.jar]
+            Actor.log.info(f"Cookies after warmup: {cookie_names}")
+
+            # Step 3: Verify session works — request homepage with accumulated cookies
             response = await self.client.get(
                 f"{BASE_URL}/", follow_redirects=True
             )
             Actor.log.info(
-                f"Session warmed up (status {response.status_code}, "
-                f"url {response.url})"
+                f"Post-consent check: status={response.status_code} "
+                f"url={response.url} size={len(response.content)}"
             )
+
+            # If we still end up on CMP, the consent cookie alone isn't enough.
+            # Try also setting euconsent-v2 (TCF v2 accept-all consent string).
+            final_url = str(response.url)
+            if "cmp.seznam.cz" in final_url or len(response.content) < 30000:
+                Actor.log.warning(
+                    "Consent cookie alone insufficient, setting euconsent-v2"
+                )
+                # Standard IAB TCF v2.0 "accept all" consent string
+                # This is a minimal valid TCF consent string indicating full consent
+                self.client.cookies.set(
+                    "euconsent-v2",
+                    "CPz_qQAPz_qQAGXABBENDeCgAAAAAAAAACiQAAAAAAAA",
+                    domain=".seznam.cz",
+                )
+                # Retry
+                response = await self.client.get(
+                    f"{BASE_URL}/", follow_redirects=True
+                )
+                Actor.log.info(
+                    f"Post-euconsent check: status={response.status_code} "
+                    f"url={response.url} size={len(response.content)}"
+                )
+
             self._session_warmed = True
+
         except Exception as e:
             Actor.log.warning(f"Session warmup failed: {e}")
-            # Continue anyway — some requests may still work
+            # Set consent cookies anyway and continue
+            self.client.cookies.set("szncmpone", "1", domain=".seznam.cz")
+            self.client.cookies.set("szncmpone", "1", domain=".sbazar.cz")
             self._session_warmed = True
 
     async def scrape_category_listings(
@@ -331,14 +409,32 @@ class SbazarScraper:
         try:
             response = await self.client.get(listing["url"], follow_redirects=True)
             response.raise_for_status()
-            soup = BeautifulSoup(response.content, "lxml")
 
+            content_size = len(response.content)
+            final_url = str(response.url)
+
+            # Warn if we got redirected to CMP or got suspiciously small content
+            if "cmp.seznam.cz" in final_url:
+                Actor.log.warning(
+                    f"Detail page redirected to CMP: {listing['url']} → {final_url}"
+                )
+                return listing
+            if content_size < 5000:
+                Actor.log.warning(
+                    f"Detail page too small ({content_size}b): {listing['url']}"
+                )
+                return listing
+
+            soup = BeautifulSoup(response.content, "lxml")
             details = self._extract_detailed_data(soup)
 
-            # Merge with existing listing data
+            # Merge with existing listing data (detail data overrides)
             detailed_listing = {**listing, **details}
 
-            Actor.log.debug(f"Scraped detailed data for listing {listing['id']}")
+            fields_found = [k for k in ("title", "full_description", "contact_name", "date") if details.get(k)]
+            Actor.log.debug(
+                f"Detail {listing['id']}: {content_size}b, fields={fields_found}"
+            )
             return detailed_listing
 
         except Exception as e:
