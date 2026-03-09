@@ -206,6 +206,12 @@ class SbazarScraper:
             try:
                 response = await self.client.get(url, follow_redirects=True)
                 response.raise_for_status()
+
+                Actor.log.info(
+                    f"Page response: status={response.status_code} "
+                    f"url={response.url} size={len(response.content)}"
+                )
+
                 soup = BeautifulSoup(response.content, "lxml")
 
                 # Extract listings from current page
