@@ -1,0 +1,13 @@
+{
+    "actorSpecification": 1,
+    "name": "sbazar-scraper",
+    "title": "Sbazar.cz Scraper",
+    "description": "Scraper for sbazar.cz classified ads (Seznam.cz marketplace). Scrapes listings from multiple categories with detailed information including images, seller info, and location data.",
+    "version": "1.0",
+    "buildTag": "latest",
+    "meta": {
+        "templateId": "python-start"
+    },
+    "input": "./input_schema.json",
+    "dockerfile": "../Dockerfile"
+}

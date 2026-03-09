@@ -1,0 +1,96 @@
+{
+    "title": "Sbazar.cz Scraper",
+    "type": "object",
+    "schemaVersion": 1,
+    "properties": {
+        "categories": {
+            "title": "Categories to scrape",
+            "type": "array",
+            "description": "List of Sbazar.cz categories to scrape. Use category seoName values (e.g. '1-auto-moto'). Leave empty to scrape all top-level categories.",
+            "editor": "select",
+            "items": {
+                "type": "string",
+                "enum": [
+                    "1-auto-moto",
+                    "8-dum-byt-zahrada",
+                    "15-obleceni-obuv-doplnky",
+                    "27-sport",
+                    "28-zdravi-krasa",
+                    "29-hobby-volny-cas",
+                    "30-elektronika",
+                    "38-pc-notebooky-software",
+                    "42-mobily-a-komunikace",
+                    "45-audio-video-foto",
+                    "49-deti-a-miminka",
+                    "54-zvířata",
+                    "56-kultura-zabava",
+                    "58-knihy-ucebnice-casopisy",
+                    "60-hudebni-nastroje",
+                    "62-sberatelstvi",
+                    "64-stavebniny-nastroje",
+                    "66-stroje-a-pristroje",
+                    "68-kancelare-obchody",
+                    "70-ostatni"
+                ],
+                "enumTitles": [
+                    "Auto-moto",
+                    "Dum, byt, zahrada",
+                    "Obleceni, obuv, doplnky",
+                    "Sport",
+                    "Zdravi a krasa",
+                    "Hobby a volny cas",
+                    "Elektronika",
+                    "PC, notebooky, software",
+                    "Mobily a komunikace",
+                    "Audio, video, foto",
+                    "Deti a miminka",
+                    "Zvirata",
+                    "Kultura, zabava",
+                    "Knihy, ucebnice, casopisy",
+                    "Hudebni nastroje",
+                    "Sberatelstvi",
+                    "Stavebniny, nastroje",
+                    "Stroje a pristroje",
+                    "Kancelare, obchody",
+                    "Ostatni"
+                ]
+            }
+        },
+        "maxListings": {
+            "title": "Maximum listings per category",
+            "type": "integer",
+            "description": "Maximum number of listings to scrape per category (0 = unlimited)",
+            "minimum": 0
+        },
+        "includeDetailedData": {
+            "title": "Include detailed data",
+            "type": "boolean",
+            "description": "Whether to scrape detailed information from individual listing pages (description, seller, JSON-LD data)"
+        },
+        "searchQuery": {
+            "title": "Search query",
+            "type": "string",
+            "description": "Optional search term to filter listings",
+            "editor": "textfield"
+        },
+        "location": {
+            "title": "Location filter",
+            "type": "string",
+            "description": "Optional location to filter listings (e.g. 'praha', 'brno')",
+            "editor": "textfield"
+        },
+        "priceMin": {
+            "title": "Minimum price (CZK)",
+            "type": "integer",
+            "description": "Minimum price filter in Czech Koruna",
+            "minimum": 0
+        },
+        "priceMax": {
+            "title": "Maximum price (CZK)",
+            "type": "integer",
+            "description": "Maximum price filter in Czech Koruna",
+            "minimum": 0
+        }
+    },
+    "required": []
+}
