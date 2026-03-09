@@ -193,27 +193,30 @@ class SbazarScraper:
 
         URL patterns (discovered by testing):
         - Category browse:           /{category}
-        - Search (all categories):   /hledej/{query}
         - Search within category:    /hledej/{query}/{category}
-        - With pagination:           .../cela-cr/cena-neomezena/nejnovejsi/{page}
-        - With price filter:         .../cela-cr/cena-od-X-do-Y/nejnovejsi
-        - With location filter:      .../{location}/cena-neomezena/nejnovejsi
+        - Page 2+ adds suffix:       .../cela-cr/cena-neomezena/nejnovejsi/{page}
+
+        IMPORTANT: Page 1 URLs must NOT include the /cela-cr/.../nejnovejsi
+        suffix — sbazar 301-redirects those to the plain form, which breaks
+        the session cookie chain and returns an empty page. Page 2+ works
+        fine with the suffix (the pagination links on the page use it).
         """
 
         # Build the base path
         if search_query:
-            # Search within a specific category
             base = f"{BASE_URL}/hledej/{quote(search_query)}/{category}"
         else:
-            # Category browse
             base = f"{BASE_URL}/{category}"
 
-        # Location part
+        # Page 1: use the plain URL (no filter suffix)
+        if page_number == 1:
+            return base
+
+        # Page 2+: include the filter path for pagination
         location_slug = "cela-cr"
         if location:
             location_slug = location.lower().replace(" ", "-")
 
-        # Price part
         if price_min and price_max:
             price_slug = f"cena-od-{price_min}-do-{price_max}"
         elif price_min:
@@ -223,10 +226,7 @@ class SbazarScraper:
         else:
             price_slug = "cena-neomezena"
 
-        if page_number == 1:
-            return f"{base}/{location_slug}/{price_slug}/nejnovejsi"
-        else:
-            return f"{base}/{location_slug}/{price_slug}/nejnovejsi/{page_number}"
+        return f"{base}/{location_slug}/{price_slug}/nejnovejsi/{page_number}"
 
     def _extract_listings_from_page(
         self, soup: BeautifulSoup, category: str
