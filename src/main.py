@@ -71,6 +71,32 @@ class SbazarScraper:
     def __init__(self, client: AsyncClient):
         self.client = client
         self.scraped_listings: set[str] = set()
+        self._session_warmed = False
+
+    async def _warm_session(self):
+        """Warm up the HTTP session by following the Seznam autologin redirect chain.
+
+        Sbazar.cz redirects first-time visitors through login.szn.cz/autologin
+        which sets session cookies. After this, subsequent requests work normally.
+        The httpx client's cookie jar retains the cookies automatically.
+        """
+        if self._session_warmed:
+            return
+
+        Actor.log.info("Warming up session (following autologin redirect chain)...")
+        try:
+            response = await self.client.get(
+                f"{BASE_URL}/", follow_redirects=True
+            )
+            Actor.log.info(
+                f"Session warmed up (status {response.status_code}, "
+                f"url {response.url})"
+            )
+            self._session_warmed = True
+        except Exception as e:
+            Actor.log.warning(f"Session warmup failed: {e}")
+            # Continue anyway — some requests may still work
+            self._session_warmed = True
 
     async def scrape_category_listings(
         self,
@@ -88,6 +114,9 @@ class SbazarScraper:
         total_pages_scraped = 0
 
         Actor.log.info(f"Starting to scrape category: {category}")
+
+        # Ensure session cookies are set before scraping
+        await self._warm_session()
 
         while True:
             url = self._build_category_url(
@@ -162,23 +191,29 @@ class SbazarScraper:
     ) -> str:
         """Build category listing URL with filters and pagination.
 
-        URL pattern: /{category}/[location]/[price-range]/nejnovejsi/[page]
-        Search pattern: /hledej/{query}
+        URL patterns (discovered by testing):
+        - Category browse:           /{category}
+        - Search (all categories):   /hledej/{query}
+        - Search within category:    /hledej/{query}/{category}
+        - With pagination:           .../cela-cr/cena-neomezena/nejnovejsi/{page}
+        - With price filter:         .../cela-cr/cena-od-X-do-Y/nejnovejsi
+        - With location filter:      .../{location}/cena-neomezena/nejnovejsi
         """
 
+        # Build the base path
         if search_query:
-            # Search mode overrides category browsing
-            url = f"{BASE_URL}/hledej/{quote(search_query)}"
-            if page_number > 1:
-                url += f"?stranka={page_number}"
-            return url
+            # Search within a specific category
+            base = f"{BASE_URL}/hledej/{quote(search_query)}/{category}"
+        else:
+            # Category browse
+            base = f"{BASE_URL}/{category}"
 
-        # Location part of URL
+        # Location part
         location_slug = "cela-cr"
         if location:
             location_slug = location.lower().replace(" ", "-")
 
-        # Price part of URL
+        # Price part
         if price_min and price_max:
             price_slug = f"cena-od-{price_min}-do-{price_max}"
         elif price_min:
@@ -189,9 +224,9 @@ class SbazarScraper:
             price_slug = "cena-neomezena"
 
         if page_number == 1:
-            return f"{BASE_URL}/{category}/{location_slug}/{price_slug}/nejnovejsi"
+            return f"{base}/{location_slug}/{price_slug}/nejnovejsi"
         else:
-            return f"{BASE_URL}/{category}/{location_slug}/{price_slug}/nejnovejsi/{page_number}"
+            return f"{base}/{location_slug}/{price_slug}/nejnovejsi/{page_number}"
 
     def _extract_listings_from_page(
         self, soup: BeautifulSoup, category: str
@@ -468,19 +503,19 @@ class SbazarScraper:
     def _check_next_page(self, soup: BeautifulSoup, current_page: int) -> bool:
         """Check if there's a next page of results."""
 
-        # Method 1: Look for "Nacist dalsi nabidky" (Load more) link/button
-        next_link = soup.find("a", href=re.compile(rf"/{current_page + 1}$"))
-        if next_link:
+        # Method 1: Look for pagination "next" button (data-testid="pagination-next")
+        next_btn = soup.find(attrs={"data-testid": "pagination-next"})
+        if next_btn:
             return True
 
-        # Method 2: Look for pagination buttons with next page number
+        # Method 2: Look for pagination item with next page number
         next_page_str = str(current_page + 1)
-        pagination_buttons = soup.find_all("button")
-        for btn in pagination_buttons:
-            if btn.get_text(strip=True) == next_page_str:
+        page_items = soup.find_all(attrs={"data-testid": "pagination-item"})
+        for item in page_items:
+            if item.get_text(strip=True) == next_page_str:
                 return True
 
-        # Method 3: Check pagination links
+        # Method 3: Check pagination links for next page in URL
         pagination_links = soup.find_all("a", href=re.compile(r"/nejnovejsi/\d+"))
         for link in pagination_links:
             href = link.get("href", "")
@@ -488,7 +523,12 @@ class SbazarScraper:
             if page_match and int(page_match.group(1)) > current_page:
                 return True
 
-        # Method 4: If we got a full page of listings, there might be more
+        # Method 4: "Load more" button
+        load_more = soup.find(attrs={"data-testid": "pagination-more"})
+        if load_more:
+            return True
+
+        # Method 5: If we got a full page of listings, there might be more
         listing_elements = soup.find_all("li", attrs={"data-offer-id": True})
         if len(listing_elements) >= LISTINGS_PER_PAGE:
             return True
@@ -563,9 +603,10 @@ async def main() -> None:
             Actor.log.warning("Continuing without database integration")
             db_manager_available = False
 
-        # Create HTTP client with proper headers
-        # Note: sbazar.cz serves full content without consent cookies —
-        # the CMP banner is a non-blocking JS overlay, so no cookies needed.
+        # Create HTTP client with proper headers.
+        # Sbazar.cz redirects first-time visitors through login.szn.cz/autologin.
+        # The scraper warms up the session by following that redirect chain once,
+        # which sets the necessary cookies. No hardcoded consent cookies needed.
         headers = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
