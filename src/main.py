@@ -564,7 +564,8 @@ async def main() -> None:
             db_manager_available = False
 
         # Create HTTP client with proper headers
-        # Set cookies to bypass Seznam.cz consent wall
+        # Note: sbazar.cz serves full content without consent cookies —
+        # the CMP banner is a non-blocking JS overlay, so no cookies needed.
         headers = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -577,15 +578,7 @@ async def main() -> None:
             "Upgrade-Insecure-Requests": "1",
         }
 
-        # Seznam consent cookies to bypass the CMP redirect
-        cookies = {
-            "euconsent-v2": "CQKHhgAQKHhgAAHABBENBeFgAAAAAAAAAqIAAAAAAGhgQGgAaABuAKYAXoBigDIgGiAN4AegBCgCSAFIAKoAWYAuQBkgDaAHBAOMAd4A-ICEgEWAJEATwAqABcADgAHoARAAmABbADIAGcAPgAhoBGgCRAE2AKAAVQAsgBdADIAHCAOMAeYBAQCKgEpAJeAWGAskBZYC5wGGAMaAZSA0sBqQDfAHEgOaAdcA7oB4ADzAH1APxAgoBCoCHQEVgIuARiAjoBH4CSQE2gJ0AWmAuYBdoC_gGBAMJAYkAyIBkoDLQGcANLAb2A4sBx4DowHTgO0AewA-IB-AD_AIEAQUAg0BDACIgEUAIsATMAm0BOICdgE9AKTAUqApUBWgCuQFhALUAW2AusBfADAgGFAMSAZEA0MBowDTQGxgNyAb2A4cBx4DqAHXAOzAduA7oB4QDxwH0AP0AgeBBkCDwEJgIXAQyAiQBFQCMQEhAJJASiAmEBM4CdgE9AKBAUGAoYBRQClwFQAKmAVgArYBXQCwAFlALPAWoAtcBbgC5AF1gLzAX0AwgBhoDHAGPAMkAZUAy4BnQDQQGjANJAaYA04BrIDXAGvgNjAbKA2oBuIDdAG9AN-AcOA5IBywDmQHOgOjAdKA60B1oDsAHZgO0Ad0A74B4oDygHlAPPAfQA-wB-gEAAIKAQaAhQBDACGgEQgIkARQAiwBGQCNgEdAJBATGAmYBOICdgE9gJ-AUCAoMBQ4CigFLgKbAVAAqYBV4CwAFhALOAWoAtcBbgC5gF1gLzAX2AwIBhQDHgGSAMuAZ0A0EBowDSQGmANOAasA1wBroDYwGygNqAbcA3QBvYDfgHDgOKAcmA5YBzIDnQHSgOtAdaA68B2ADswHaAO6Ad8A8cB5QD1AHyAPPAfYBAACCgEJAIaAQ0AhoBEICJgEUAI2AR0AkkBMICZwE7AJ6AUCAoMBQ4ClwFNgKgAVMArABWwCwAFhALOAWoAtsBcwC6wF5gL7AYEAwoBhoDEgGPAMuAZ0A0YBpIDTQGnANWAa4A14BsYDZQG1ANuAboA3sBvwDhwHJAOZAdGA6UB1oDrwHaAO6Ad8A84B5QDzwH0AP8AgUBDQCIQESAIoARsAjoBJICYQEzgJ2AT0AoEBQYChwFLgKbAVAAqYBV4CtgFnALaAXMAusBfYDCgGJAMkAZcAzoBpIDTAGnANeAbGA2UBtQDdAG-AOHAcUA5MBy4DnQHRgOlAdaA68B2gDugHlAPPAfQA-wCAAEFAIaARQAigBFgCOAEdAJiATCAmcBPQChwFLgKgAVMArABWwC1AFzALrAX2AwoBiQDHgGXAM6AacA14BsYDZQG1AN0Ab8A4oBywDnQHSgOtAdoA7oBAAA.f_wAAAAAAAAA",
-            "szncmpone": "1",
-        }
-
-        async with AsyncClient(
-            headers=headers, cookies=cookies, timeout=30.0
-        ) as client:
+        async with AsyncClient(headers=headers, timeout=30.0) as client:
             scraper = SbazarScraper(client)
 
             all_listings: List[Dict[str, Any]] = []
