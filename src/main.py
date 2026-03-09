@@ -117,31 +117,20 @@ class SbazarScraper:
                     parsed = urlparse(str(response.url))
                     location = f"{parsed.scheme}://{parsed.netloc}{location}"
 
-                # Stop before CMP consent page — we have autologin cookies by now
-                if "cmp.seznam.cz" in location or "bcr.iva.seznam.cz" in location:
-                    Actor.log.info(f"  Reached consent redirect, stopping chain")
+                # Stop before CMP consent page — but DO follow bcr.iva.seznam.cz
+                # as it may set consent cookies via Set-Cookie headers
+                if "cmp.seznam.cz" in location:
+                    Actor.log.info(f"  Reached CMP consent page, stopping chain")
                     break
 
                 url = location
 
-            # Step 2: Set consent cookies to bypass CMP redirects.
-            # Both szncmpone and euconsent-v2 are required — the homepage works
-            # with just szncmpone, but category/detail pages check euconsent-v2
-            # via bcr.iva.seznam.cz (reason=missing if absent).
+            # Step 2: Set szncmpone consent flag cookie.
+            # The bcr.iva.seznam.cz hop should have set euconsent-v2 via
+            # Set-Cookie headers. We add szncmpone as an additional flag.
             self.client.cookies.set("szncmpone", "1", domain=".seznam.cz")
             self.client.cookies.set("szncmpone", "1", domain=".sbazar.cz")
-            # IAB TCF v2.0 consent string — accept-all for Seznam.cz services
-            self.client.cookies.set(
-                "euconsent-v2",
-                "CPz_qQAPz_qQAGXABBENDeCgAAAAAAAAACiQAAAAAAAA",
-                domain=".seznam.cz",
-            )
-            self.client.cookies.set(
-                "euconsent-v2",
-                "CPz_qQAPz_qQAGXABBENDeCgAAAAAAAAACiQAAAAAAAA",
-                domain=".sbazar.cz",
-            )
-            Actor.log.info("Set consent cookies (szncmpone + euconsent-v2)")
+            Actor.log.info("Set szncmpone consent cookie")
 
             # Log all accumulated cookies for debugging
             cookie_names = [f"{c.name}={c.domain}" for c in self.client.cookies.jar]
@@ -160,19 +149,8 @@ class SbazarScraper:
 
         except Exception as e:
             Actor.log.warning(f"Session warmup failed: {e}")
-            # Set consent cookies anyway and continue
             self.client.cookies.set("szncmpone", "1", domain=".seznam.cz")
             self.client.cookies.set("szncmpone", "1", domain=".sbazar.cz")
-            self.client.cookies.set(
-                "euconsent-v2",
-                "CPz_qQAPz_qQAGXABBENDeCgAAAAAAAAACiQAAAAAAAA",
-                domain=".seznam.cz",
-            )
-            self.client.cookies.set(
-                "euconsent-v2",
-                "CPz_qQAPz_qQAGXABBENDeCgAAAAAAAAACiQAAAAAAAA",
-                domain=".sbazar.cz",
-            )
             self._session_warmed = True
 
     async def scrape_category_listings(
