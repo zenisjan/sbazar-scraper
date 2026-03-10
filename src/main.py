@@ -73,84 +73,77 @@ class SbazarScraper:
         self.scraped_listings: set[str] = set()
         self._session_warmed = False
 
+    async def _fetch_page(self, url: str) -> "httpx.Response":
+        """Fetch a page by manually following the Seznam redirect chain.
+
+        Sbazar.cz redirects every request through a consent chain:
+        sbazar → login.szn.cz/autologin → sbazar?noredirect=1 → sbazar →
+        bcr.iva.seznam.cz → sbazar?cwtkn=... → sbazar (200)
+
+        The cwtkn exchange grants temporary per-request consent. We must
+        follow this chain for EVERY request (consent is not persisted via
+        cookies alone). We stop at cmp.seznam.cz if reached, as that
+        indicates the consent flow failed.
+        """
+        from urllib.parse import urlparse
+
+        for hop in range(20):
+            response = await self.client.get(url, follow_redirects=False)
+
+            # Got a real page — return it
+            if response.status_code == 200:
+                return response
+
+            # Not a redirect — return as-is
+            if response.status_code not in (301, 302, 303, 307, 308):
+                return response
+
+            location = response.headers.get("location", "")
+            if not location:
+                return response
+
+            # Resolve relative URLs
+            if location.startswith("/"):
+                parsed = urlparse(str(response.url))
+                location = f"{parsed.scheme}://{parsed.netloc}{location}"
+
+            # Stop at CMP consent page — consent flow failed
+            if "cmp.seznam.cz" in location:
+                Actor.log.warning(
+                    f"Redirect chain reached CMP consent page after {hop + 1} hops"
+                )
+                return response
+
+            url = location
+
+        Actor.log.warning(f"Redirect chain exhausted after 20 hops")
+        return response
+
     async def _warm_session(self):
-        """Warm up the HTTP session by following the Seznam autologin redirect chain.
+        """Warm up the HTTP session by following the Seznam autologin chain once.
 
-        Sbazar.cz redirects first-time visitors through a chain:
-        sbazar → login.szn.cz/autologin → sbazar?noredirect=1 → bcr.iva.seznam.cz → cmp.seznam.cz
-
-        We follow redirects manually to accumulate autologin cookies, then set
-        the Seznam consent cookie (szncmpone) to bypass the CMP consent page.
-        After this, subsequent requests return real content.
+        This accumulates autologin cookies from login.szn.cz so that
+        subsequent requests only need the bcr/cwtkn consent exchange
+        (fewer hops). All actual page fetches go through _fetch_page().
         """
         if self._session_warmed:
             return
 
-        Actor.log.info("Warming up session (manual redirect chain + consent cookie)...")
+        Actor.log.info("Warming up session...")
         try:
-            # Step 1: Manually follow the redirect chain to accumulate cookies
-            # from login.szn.cz/autologin. Stop before reaching cmp.seznam.cz.
-            url = f"{BASE_URL}/"
-            for hop in range(15):
-                response = await self.client.get(url, follow_redirects=False)
-                Actor.log.info(
-                    f"  Warmup hop {hop}: {response.status_code} "
-                    f"url={response.url} size={len(response.content)}"
-                )
-
-                # If we got a 200 with substantial content, session is ready
-                if response.status_code == 200 and len(response.content) > 30000:
-                    Actor.log.info("Session warmed up (got content page directly)")
-                    self._session_warmed = True
-                    return
-
-                if response.status_code not in (301, 302, 303, 307, 308):
-                    break
-
-                location = response.headers.get("location", "")
-                if not location:
-                    break
-
-                # Resolve relative URLs
-                if location.startswith("/"):
-                    from urllib.parse import urlparse
-                    parsed = urlparse(str(response.url))
-                    location = f"{parsed.scheme}://{parsed.netloc}{location}"
-
-                # Stop before CMP consent page — but DO follow bcr.iva.seznam.cz
-                # as it may set consent cookies via Set-Cookie headers
-                if "cmp.seznam.cz" in location:
-                    Actor.log.info(f"  Reached CMP consent page, stopping chain")
-                    break
-
-                url = location
-
-            # Step 2: Set szncmpone consent flag cookie.
-            # The bcr.iva.seznam.cz hop should have set euconsent-v2 via
-            # Set-Cookie headers. We add szncmpone as an additional flag.
-            self.client.cookies.set("szncmpone", "1", domain=".seznam.cz")
-            self.client.cookies.set("szncmpone", "1", domain=".sbazar.cz")
-            Actor.log.info("Set szncmpone consent cookie")
-
-            # Log all accumulated cookies for debugging
-            cookie_names = [f"{c.name}={c.domain}" for c in self.client.cookies.jar]
-            Actor.log.info(f"Cookies after warmup: {cookie_names}")
-
-            # Step 3: Verify session works — request a category page
-            response = await self.client.get(
-                f"{BASE_URL}/27-sport", follow_redirects=True
-            )
+            response = await self._fetch_page(f"{BASE_URL}/")
             Actor.log.info(
-                f"Post-consent check: status={response.status_code} "
+                f"Warmup result: status={response.status_code} "
                 f"url={response.url} size={len(response.content)}"
             )
 
-            self._session_warmed = True
+            # Log cookies for debugging
+            cookie_names = [f"{c.name}={c.domain}" for c in self.client.cookies.jar]
+            Actor.log.info(f"Cookies after warmup: {cookie_names}")
 
+            self._session_warmed = True
         except Exception as e:
             Actor.log.warning(f"Session warmup failed: {e}")
-            self.client.cookies.set("szncmpone", "1", domain=".seznam.cz")
-            self.client.cookies.set("szncmpone", "1", domain=".sbazar.cz")
             self._session_warmed = True
 
     async def scrape_category_listings(
@@ -181,7 +174,7 @@ class SbazarScraper:
             Actor.log.info(f"Scraping page {page_number}: {url}")
 
             try:
-                response = await self.client.get(url, follow_redirects=True)
+                response = await self._fetch_page(url)
                 response.raise_for_status()
 
                 Actor.log.info(
@@ -390,7 +383,7 @@ class SbazarScraper:
         """
 
         try:
-            response = await self.client.get(listing["url"], follow_redirects=True)
+            response = await self._fetch_page(listing["url"])
             response.raise_for_status()
 
             content_size = len(response.content)
