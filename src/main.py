@@ -119,17 +119,45 @@ class SbazarScraper:
         Actor.log.warning(f"Redirect chain exhausted after 20 hops")
         return response
 
-    async def _warm_session(self):
-        """Warm up the HTTP session by following the Seznam autologin chain once.
+    def _set_consent_cookies(self):
+        """Set Seznam.cz CMP consent cookies to bypass the consent redirect.
 
-        This accumulates autologin cookies from login.szn.cz so that
-        subsequent requests only need the bcr/cwtkn consent exchange
-        (fewer hops). All actual page fetches go through _fetch_page().
+        Without these cookies, every request to sbazar.cz redirects through
+        bcr.iva.seznam.cz → cmp.seznam.cz (consent management page).
+        We set a valid euconsent-v2 (IAB TCF v2.0) cookie to skip this.
+        """
+        # szncmpone=1 is the Seznam.cz "consent given" flag
+        self.client.cookies.set("szncmpone", "1", domain=".seznam.cz")
+        self.client.cookies.set("szncmpone", "1", domain=".sbazar.cz")
+
+        # euconsent-v2 is the IAB TCF v2.0 consent string.
+        # This is a real consent string captured from the Seznam.cz CMP
+        # with all purposes and vendors accepted. Valid for 13 months.
+        euconsent = (
+            "CQgzIcAQgzIcAD3ACQCSCUFsAP_gAEPgAATIJNQJgAFAAQAAqABkAEAAKAAZAA0"
+            "ACSAEwAJwAWwAvwBhAGIAQEAggCEAEUAI4ATgAoQBxADuAIQAUgA04COgE2gKkAV"
+            "kAtwBeYDGQGWAMuAf4BAcCMwEmgSrgKgAVABAADIAGgATAAxAB-AEIAI4ATgA7gCE"
+            "AEWATaAqQBWQC3AF5gMsAZcBKsAA.IJVwKgAFAAQAAqABkAEAAKAAZAA0ACSAEwA"
+            "JwAWwAvwBhAGIAPwAgIBBAEIAIoARwAnABQgDNAHEAO4AhABFgCkAGnAR0Am0BUg"
+            "CsgFuALzAYyAywBlwD_AIDgRmAk0BKsAA.YAAAAAAAAWAA"
+        )
+        self.client.cookies.set("euconsent-v2", euconsent, domain=".seznam.cz")
+        self.client.cookies.set("euconsent-v2", euconsent, domain=".sbazar.cz")
+
+    async def _warm_session(self):
+        """Warm up the HTTP session with consent cookies + autologin chain.
+
+        Sets consent cookies first, then follows the autologin redirect
+        chain to accumulate session cookies from login.szn.cz.
         """
         if self._session_warmed:
             return
 
         Actor.log.info("Warming up session...")
+
+        # Set consent cookies BEFORE any requests
+        self._set_consent_cookies()
+
         try:
             response = await self._fetch_page(f"{BASE_URL}/")
             Actor.log.info(
