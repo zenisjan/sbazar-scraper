@@ -21,18 +21,21 @@ from apify import Actor
 from bs4 import BeautifulSoup
 from httpx import AsyncClient, HTTPStatusError
 
-# Import our database manager - handle different import paths
+# Import our database manager and geocoding - handle different import paths
 try:
     from .database import db_manager
+    from .czech_cities import geocode_czech_city
 except ImportError:
     try:
         from database import db_manager
+        from czech_cities import geocode_czech_city
     except ImportError:
         # Add current directory to path if needed
         current_dir = os.path.dirname(os.path.abspath(__file__))
         if current_dir not in sys.path:
             sys.path.insert(0, current_dir)
         from database import db_manager
+        from czech_cities import geocode_czech_city
 
 BASE_URL = "https://www.sbazar.cz"
 
@@ -388,6 +391,14 @@ class SbazarScraper:
         if top_badge and "Top" in top_badge.get_text():
             is_top = True
 
+        # Geocode the location to coordinates
+        coordinates_lat = None
+        coordinates_lng = None
+        if location:
+            coords = geocode_czech_city(location)
+            if coords:
+                coordinates_lat, coordinates_lng = coords
+
         return {
             "id": str(offer_id),
             "title": title,
@@ -397,6 +408,8 @@ class SbazarScraper:
             "price_text": price_text,
             "description": "",  # Only available on detail page
             "location": location,
+            "coordinates_lat": coordinates_lat,
+            "coordinates_lng": coordinates_lng,
             "views": 0,  # Not shown on listing cards
             "date": "",  # Only available on detail page
             "is_top": is_top,
@@ -430,10 +443,22 @@ class SbazarScraper:
                 return listing
 
             soup = BeautifulSoup(response.content, "lxml")
+
+            # Check if the page is blocked (anti-bot)
+            page_text = soup.get_text()
+            if "brání v načtení" in page_text or "nelze načíst" in page_text:
+                Actor.log.warning(
+                    f"Detail page blocked by anti-bot for {listing['id']}"
+                )
+                return listing
+
             details = self._extract_detailed_data(soup)
 
-            # Merge with existing listing data (detail data overrides)
-            detailed_listing = {**listing, **details}
+            # Only override listing card data with non-empty detail values
+            detailed_listing = {**listing}
+            for key, value in details.items():
+                if value is not None and value != "" and value != []:
+                    detailed_listing[key] = value
 
             fields_found = [k for k in ("title", "full_description", "contact_name", "date") if details.get(k)]
             Actor.log.debug(
