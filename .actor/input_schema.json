@@ -90,6 +90,22 @@
             "type": "integer",
             "description": "Maximum price filter in Czech Koruna",
             "minimum": 0
+        },
+        "proxyConfiguration": {
+            "title": "Proxy configuration",
+            "type": "object",
+            "description": "Sbazar.cz (Seznam) returns HTTP 404 to datacenter and non-Czech IPs, so this Actor needs a Czech residential proxy to work on the Apify platform. Defaults to Apify Proxy residential IPs located in Czechia.",
+            "editor": "proxy",
+            "prefill": {
+                "useApifyProxy": true,
+                "apifyProxyGroups": ["RESIDENTIAL"],
+                "apifyProxyCountry": "CZ"
+            },
+            "default": {
+                "useApifyProxy": true,
+                "apifyProxyGroups": ["RESIDENTIAL"],
+                "apifyProxyCountry": "CZ"
+            }
         }
     },
     "required": []

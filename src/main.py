@@ -744,7 +744,25 @@ async def main() -> None:
             "Upgrade-Insecure-Requests": "1",
         }
 
-        async with AsyncClient(headers=headers, timeout=30.0) as client:
+        # Sbazar.cz (Seznam) returns HTTP 404 to datacenter / non-Czech IPs, so
+        # requests must be routed through a Czech residential proxy. The proxy
+        # input defaults to Apify Proxy (RESIDENTIAL, country CZ) — see
+        # input_schema.json — so scheduled runs get it without extra config.
+        proxy_configuration = await Actor.create_proxy_configuration(
+            actor_proxy_input=actor_input.get("proxyConfiguration")
+        )
+        proxy_url = await proxy_configuration.new_url() if proxy_configuration else None
+        if proxy_url:
+            Actor.log.info("Routing requests through Apify Proxy")
+        else:
+            Actor.log.warning(
+                "No proxy configured — Seznam blocks datacenter IPs and will "
+                "return 404. Enable Apify Proxy (residential, Czechia)."
+            )
+
+        async with AsyncClient(
+            headers=headers, timeout=30.0, proxy=proxy_url
+        ) as client:
             scraper = SbazarScraper(client)
 
             all_listings: List[Dict[str, Any]] = []
