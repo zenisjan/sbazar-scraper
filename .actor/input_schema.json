@@ -6,7 +6,7 @@
         "categories": {
             "title": "Categories to scrape",
             "type": "array",
-            "description": "List of Sbazar.cz categories to scrape. Use category seoName values (e.g. '1-auto-moto'). Leave empty to scrape all top-level categories.",
+            "description": "List of Sbazar.cz top-level categories to scrape (category seoName values, e.g. '1-auto-moto'). Leave empty to scrape all 12. A category with more offers than the site pages through (~10,000) is scraped via its subcategories and price bands.",
             "editor": "select",
             "items": {
                 "type": "string",
@@ -16,51 +16,36 @@
                     "15-obleceni-obuv-doplnky",
                     "27-sport",
                     "28-zdravi-krasa",
-                    "29-hobby-volny-cas",
-                    "30-elektronika",
-                    "38-pc-notebooky-software",
-                    "42-mobily-a-komunikace",
-                    "45-audio-video-foto",
-                    "49-deti-a-miminka",
-                    "54-zvířata",
-                    "56-kultura-zabava",
-                    "58-knihy-ucebnice-casopisy",
-                    "60-hudebni-nastroje",
-                    "62-sberatelstvi",
-                    "64-stavebniny-nastroje",
-                    "66-stroje-a-pristroje",
-                    "68-kancelare-obchody",
-                    "70-ostatni"
+                    "29-detsky-bazar",
+                    "30-elektro-pocitace",
+                    "33-starozitnosti-hobby-umeni",
+                    "77-nemovitosti",
+                    "82-sluzby",
+                    "90-zvirata",
+                    "295-hudba-knihy-hry-zabava"
                 ],
                 "enumTitles": [
                     "Auto-moto",
-                    "Dum, byt, zahrada",
+                    "Dum, byt a zahrada",
                     "Obleceni, obuv, doplnky",
                     "Sport",
                     "Zdravi a krasa",
-                    "Hobby a volny cas",
-                    "Elektronika",
-                    "PC, notebooky, software",
-                    "Mobily a komunikace",
-                    "Audio, video, foto",
-                    "Deti a miminka",
+                    "Detsky bazar",
+                    "Elektro a pocitace",
+                    "Starozitnosti, hobby, umeni",
+                    "Nemovitosti",
+                    "Sluzby",
                     "Zvirata",
-                    "Kultura, zabava",
-                    "Knihy, ucebnice, casopisy",
-                    "Hudebni nastroje",
-                    "Sberatelstvi",
-                    "Stavebniny, nastroje",
-                    "Stroje a pristroje",
-                    "Kancelare, obchody",
-                    "Ostatni"
+                    "Hudba, knihy, hry a zabava"
                 ]
             }
         },
         "maxListings": {
             "title": "Maximum listings per category",
             "type": "integer",
-            "description": "Maximum number of listings to scrape per category (0 = unlimited)",
-            "minimum": 0
+            "description": "Maximum number of listings to scrape per category (0 = unlimited, the default: every listing)",
+            "minimum": 0,
+            "default": 0
         },
         "includeDetailedData": {
             "title": "Include detailed data",
@@ -76,19 +61,19 @@
         "location": {
             "title": "Location filter",
             "type": "string",
-            "description": "Optional location to filter listings (e.g. 'praha', 'brno')",
+            "description": "Optional location to filter listings (e.g. 'Praha', 'Brno'); converted to the site's ASCII URL slug ('Slaný' -> 'slany'). If sbazar does not accept it the run fails instead of scraping unfiltered listings.",
             "editor": "textfield"
         },
         "priceMin": {
             "title": "Minimum price (CZK)",
             "type": "integer",
-            "description": "Minimum price filter in Czech Koruna",
+            "description": "Minimum price filter in Czech Koruna (inclusive; sbazar also returns 'Dohodou' offers)",
             "minimum": 0
         },
         "priceMax": {
             "title": "Maximum price (CZK)",
             "type": "integer",
-            "description": "Maximum price filter in Czech Koruna",
+            "description": "Maximum price filter in Czech Koruna (inclusive; sbazar also returns 'Dohodou' offers)",
             "minimum": 0
         },
         "proxyConfiguration": {
