@@ -5,7 +5,9 @@ This module handles all database operations including connection management,
 data insertion, and querying with the schema where actor_runs is the parent table.
 Uses Apify SDK for environment variable handling.
 
-NOTE: This file is shared between bazos-scraper, gfr-scraper, and sbazar-scraper.
+NOTE: This file is shared (copy-identical) across all scrapers: bazos, gfr,
+      drazby-stat (nabidka-majetku), sauto, sbazar, sreality, and idnes-reality.
+      The ONLY per-scraper difference is the scraper_name on the last line.
       Keep all copies in sync. See CLAUDE.md for details.
 """
 
@@ -48,9 +50,17 @@ class DatabaseManager:
                 'sslmode': os.environ.get('DB_SSL_MODE') or 'prefer',
                 'connect_timeout': 30,
                 'application_name': self.scraper_name,
-                'keepalives_idle': 600,
-                'keepalives_interval': 30,
-                'keepalives_count': 3
+                # Probe an idle connection after 60 s (then every 10 s; 3 misses =
+                # dead), which keeps its network path open through a long scraping
+                # phase, and fail a send the server hasn't acknowledged within 30 s.
+                # With the first probe only after 10 min, a pooled connection dropped
+                # silently in between stalled the next insert ~17 min until the
+                # kernel gave up (iDNES, 2026-10-26: four inserts in one run).
+                'keepalives': 1,
+                'keepalives_idle': 60,
+                'keepalives_interval': 10,
+                'keepalives_count': 3,
+                'tcp_user_timeout': 30000,
             }
 
             # Read scraper_id from env (set by scheduler when triggering runs)
