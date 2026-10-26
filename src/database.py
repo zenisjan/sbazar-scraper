@@ -5,10 +5,9 @@ This module handles all database operations including connection management,
 data insertion, and querying with the schema where actor_runs is the parent table.
 Uses Apify SDK for environment variable handling.
 
-NOTE: This file is shared (copy-identical) across all scrapers: bazos, gfr,
-      drazby-stat (nabidka-majetku), sauto, sbazar, sreality, and idnes-reality.
-      The ONLY per-scraper difference is the scraper_name on the last line.
-      Keep all copies in sync. See CLAUDE.md for details.
+NOTE: This file is shared (copy-identical) across all the scrapers listed in
+      CLAUDE.md ("database.py Sync Requirement"). The ONLY per-scraper difference
+      is the scraper_name on the last line. Keep all copies in sync.
 """
 
 from __future__ import annotations
